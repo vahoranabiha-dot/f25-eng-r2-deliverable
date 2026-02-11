@@ -1,70 +1,159 @@
 /* eslint-disable */
 "use client";
-import { useRef, useEffect, useState  } from "react";
-import { select } from "d3-selection";
-import { scaleBand, scaleLinear, scaleOrdinal } from "d3-scale";
-import { max } from "d3-array";
-import { axisBottom, axisLeft } from "d3-axis"; // D3 is a JavaScript library for data visualization: https://d3js.org/
+import { axisBottom, axisLeft } from "d3-axis";
 import { csv } from "d3-fetch";
+import { scaleBand, scaleLinear, scaleOrdinal } from "d3-scale";
+import { select } from "d3-selection";
+import { useEffect, useRef, useState } from "react";
 
-// Example data: Only the first three rows are provided as an example
-// Add more animals or change up the style as you desire
-
-// TODO: Write this interface
-interface AnimalDatum  {
-
+interface AnimalDatum {
+  name: string;
+  speed: number;
+  diet: "herbivore" | "carnivore" | "omnivore";
 }
 
-
 export default function AnimalSpeedGraph() {
-  // useRef creates a reference to the div where D3 will draw the chart.
-  // https://react.dev/reference/react/useRef
   const graphRef = useRef<HTMLDivElement>(null);
-
   const [animalData, setAnimalData] = useState<AnimalDatum[]>([]);
 
-  // TODO: Load CSV data
   useEffect(() => {
-    console.log("Implement CSV loading!")
+    csv("/sample_animals.csv").then((data) => {
+      const cleanedData = data
+        .map((row) => ({
+          name: row.name || "",
+          speed: Number(row.speed) || 0,
+          diet: row.diet as "herbivore" | "carnivore" | "omnivore",
+        }))
+        .filter((item) => item.name && item.speed > 0 && ["herbivore", "carnivore", "omnivore"].includes(item.diet))
+        .sort((a, b) => b.speed - a.speed)
+        .slice(0, 25);
+
+      setAnimalData(cleanedData);
+    });
   }, []);
 
   useEffect(() => {
-    // Clear any previous SVG to avoid duplicates when React hot-reloads
-    if (graphRef.current) {
-      graphRef.current.innerHTML = "";
-    }
+    if (!graphRef.current || animalData.length === 0) return;
 
-    if (animalData.length === 0) return;
+    graphRef.current.innerHTML = "";
 
-    // Set up chart dimensions and margins
-    const containerWidth = graphRef.current?.clientWidth ?? 800;
-    const containerHeight = graphRef.current?.clientHeight ?? 500;
+    const width = 800;
+    const height = 500;
+    const margin = { top: 50, right: 150, bottom: 100, left: 80 };
 
-    // Set up chart dimensions and margins
-    const width = Math.max(containerWidth, 600); // Minimum width of 600px
-    const height = Math.max(containerHeight, 400); // Minimum height of 400px
-    const margin = { top: 70, right: 60, bottom: 80, left: 100 };
-
-    // Create the SVG element where D3 will draw the chart
-    // https://github.com/d3/d3-selection
-    const svg  = select(graphRef.current!)
-      .append<SVGSVGElement>("svg")
+    const svg = select(graphRef.current)
+      .append("svg")
       .attr("width", width)
       .attr("height", height)
+      .append("g")
+      .attr("transform", `translate(${margin.left}, ${margin.top})`);
 
-    // TODO: Implement the rest of the graph
-    // HINT: Look up the documentation at these links
-    // https://github.com/d3/d3-scale#band-scales
-    // https://github.com/d3/d3-scale#linear-scales
-    // https://github.com/d3/d3-scale#ordinal-scales
-    // https://github.com/d3/d3-axis
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+
+    const xScale = scaleBand()
+      .domain(animalData.map((d) => d.name))
+      .range([0, chartWidth])
+      .padding(0.3);
+
+    const maxSpeed = Math.max(...animalData.map((d) => d.speed));
+    const yScale = scaleLinear().domain([0, maxSpeed]).range([chartHeight, 0]);
+
+    const colorScale = scaleOrdinal<string>()
+      .domain(["herbivore", "carnivore", "omnivore"])
+      .range(["#2E7D32", "#C62828", "#EF6C00"]);
+
+    svg
+      .selectAll(".bar")
+      .data(animalData)
+      .enter()
+      .append("rect")
+      .attr("class", "bar")
+      .attr("x", (d) => xScale(d.name) || 0)
+      .attr("y", (d) => yScale(d.speed))
+      .attr("width", xScale.bandwidth())
+      .attr("height", (d) => chartHeight - yScale(d.speed))
+      .attr("fill", (d) => colorScale(d.diet))
+      .attr("opacity", 0.8);
+
+    svg
+      .append("g")
+      .attr("transform", `translate(0, ${chartHeight})`)
+      .call(axisBottom(xScale))
+      .selectAll("text")
+      .attr("transform", "rotate(-45)")
+      .style("text-anchor", "end");
+
+    svg.append("g").call(axisLeft(yScale));
+
+    svg
+      .append("text")
+      .attr("x", chartWidth / 2)
+      .attr("y", chartHeight + 60)
+      .style("text-anchor", "middle")
+      .text("Animals (Top 25 Fastest)");
+
+    svg
+      .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -chartHeight / 2)
+      .attr("y", -50)
+      .style("text-anchor", "middle")
+      .text("Speed (km/h)");
+
+    const diets = ["herbivore", "carnivore", "omnivore"];
+    const legend = svg.append("g").attr("transform", `translate(${chartWidth + 20}, 0)`);
+
+    diets.forEach((diet, i) => {
+      const g = legend.append("g").attr("transform", `translate(0, ${i * 25})`);
+
+      g.append("rect").attr("width", 18).attr("height", 18).attr("fill", colorScale(diet));
+
+      g.append("text").attr("x", 24).attr("y", 14).text(diet);
+    });
+
+    svg
+      .append("text")
+      .attr("x", chartWidth / 2)
+      .attr("y", -20)
+      .style("text-anchor", "middle")
+      .style("font-size", "16px")
+      .style("font-weight", "bold")
+      .text("Animal Speed Comparison");
   }, [animalData]);
 
-  // TODO: Return the graph
   return (
-    // Placeholder so that this compiles. Delete this below:
     <div>
-      <h1> TODO: Delete this div in `animal-speed-graph.tsx` and implement the graph: </h1>
+      <div
+        ref={graphRef}
+        style={{
+          width: "100%",
+          maxWidth: "1000px",
+          margin: "0 auto",
+          height: "550px",
+        }}
+      />
+      <div
+        style={{
+          maxWidth: "800px",
+          margin: "20px auto",
+          padding: "15px",
+          backgroundColor: "#f5f5f5",
+          borderRadius: "8px",
+          fontSize: "14px",
+          lineHeight: "1.5",
+        }}
+      >
+        <p>
+          <strong>Chart notes:</strong>
+        </p>
+        <p>
+          • Colors show diet type: <span style={{ color: "#2E7D32" }}>Green=Herbivore</span>,{" "}
+          <span style={{ color: "#C62828" }}>Red=Carnivore</span>,{" "}
+          <span style={{ color: "#EF6C00" }}>Orange=Omnivore</span>
+        </p>
+        <p>• Displaying 25 fastest animals</p>
+      </div>
     </div>
   );
 }
